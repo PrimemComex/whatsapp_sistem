@@ -1948,4 +1948,3 @@ const globalStyles = `
 `;
 
 export default App;
-VOCÊ ESTÁ VENO ESSA MENSAGEM?
