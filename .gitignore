@@ -134,3 +134,67 @@ dist
 .yarn/build-state.yml
 .yarn/install-state.gz
 .pnp.*
+
+# ============================================
+# PRIMEM WhatsApp Business - Configurações específicas
+# ============================================
+
+# WhatsApp Web.js sessões e cache
+sessions/
+.wwebjs_auth/
+.wwebjs_cache/
+.wwebjs_auth_*
+qr-code.png
+
+# Uploads e mídia de usuários
+uploads/
+temp/
+media/
+
+# Arquivos de backup do projeto
+*_backup*
+*_copy*
+*.bak
+App - Copia.js
+server_backup.js
+
+# Banco de dados local
+*.sqlite
+*.sqlite3
+*.db
+database.sqlite
+primem.db
+
+# Arquivos de desenvolvimento
+.vscode/
+.idea/
+
+# Arquivos do sistema
+.DS_Store
+Thumbs.db
+
+# Build e compilação
+build/
+dist/
+
+# Arquivos temporários grandes (que causam erro no GitHub)
+*.tmp.*
+.tmp.*
+*.driveupload*
+.driveupload*
+*.temp
+*.temporary
+*.tmp
+.tmp/
+temp/
+
+# Arquivos de download/upload temporários
+*.part
+*.crdownload
+*.download
+
+# Arquivos muito grandes (>100MB)
+*.iso
+*.dmg
+*.zip.001
+*.rar.001
