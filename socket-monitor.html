@@ -1,0 +1,447 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+    <meta charset="UTF-8">
+    <title>Monitor Socket.IO - WhatsApp</title>
+    <style>
+        body {
+            font-family: 'Courier New', monospace;
+            background: #1e1e1e;
+            color: #0f0;
+            padding: 20px;
+            margin: 0;
+        }
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+        }
+        h1 {
+            color: #0f0;
+            border-bottom: 2px solid #0f0;
+            padding-bottom: 10px;
+        }
+        .controls {
+            margin: 20px 0;
+            padding: 15px;
+            background: #2a2a2a;
+            border: 1px solid #0f0;
+            border-radius: 5px;
+        }
+        button {
+            background: #0f0;
+            color: #000;
+            border: none;
+            padding: 10px 20px;
+            margin: 5px;
+            cursor: pointer;
+            font-weight: bold;
+            border-radius: 3px;
+        }
+        button:hover {
+            background: #0a0;
+        }
+        button.danger {
+            background: #f00;
+            color: #fff;
+        }
+        .status {
+            display: inline-block;
+            padding: 5px 10px;
+            margin-left: 10px;
+            border-radius: 3px;
+        }
+        .status.connected {
+            background: #0f0;
+            color: #000;
+        }
+        .status.disconnected {
+            background: #f00;
+            color: #fff;
+        }
+        .log-container {
+            background: #000;
+            border: 1px solid #0f0;
+            padding: 10px;
+            height: 600px;
+            overflow-y: auto;
+            font-size: 12px;
+            margin-top: 20px;
+        }
+        .log-entry {
+            margin: 5px 0;
+            padding: 5px;
+            border-left: 3px solid #444;
+        }
+        .log-entry.message-received {
+            border-left-color: #00ff00;
+            background: rgba(0, 255, 0, 0.05);
+        }
+        .log-entry.message-sent {
+            border-left-color: #00aaff;
+            background: rgba(0, 170, 255, 0.05);
+        }
+        .log-entry.media {
+            border-left-color: #ffaa00;
+            background: rgba(255, 170, 0, 0.1);
+        }
+        .log-entry.error {
+            border-left-color: #ff0000;
+            background: rgba(255, 0, 0, 0.05);
+        }
+        .timestamp {
+            color: #888;
+            font-size: 10px;
+        }
+        .event-name {
+            color: #ffff00;
+            font-weight: bold;
+        }
+        .media-info {
+            background: #333;
+            padding: 10px;
+            margin: 5px 0;
+            border-radius: 3px;
+            border: 1px solid #ffaa00;
+        }
+        .media-info h4 {
+            margin: 0 0 10px 0;
+            color: #ffaa00;
+        }
+        .media-field {
+            margin: 3px 0;
+            padding-left: 20px;
+        }
+        .media-field span {
+            color: #aaa;
+        }
+        .media-field strong {
+            color: #fff;
+        }
+        pre {
+            background: #222;
+            padding: 10px;
+            border-radius: 3px;
+            overflow-x: auto;
+            color: #0f0;
+        }
+        .stats {
+            position: fixed;
+            top: 20px;
+            right: 20px;
+            background: #2a2a2a;
+            border: 1px solid #0f0;
+            padding: 10px;
+            border-radius: 5px;
+            min-width: 200px;
+        }
+        .stats h3 {
+            margin: 0 0 10px 0;
+            color: #0f0;
+            font-size: 14px;
+        }
+        .stat-item {
+            margin: 5px 0;
+            font-size: 12px;
+        }
+        .clear-btn {
+            background: #666;
+            color: #fff;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔍 MONITOR SOCKET.IO - WHATSAPP MÍDIA</h1>
+        
+        <div class="controls">
+            <button onclick="connectSocket()">🔌 CONECTAR</button>
+            <button onclick="disconnectSocket()" class="danger">🔌 DESCONECTAR</button>
+            <button onclick="clearLog()" class="clear-btn">🗑️ LIMPAR LOG</button>
+            <button onclick="testUpload()">📤 TESTAR UPLOAD</button>
+            <span id="status" class="status disconnected">DESCONECTADO</span>
+        </div>
+
+        <div class="stats">
+            <h3>📊 ESTATÍSTICAS</h3>
+            <div class="stat-item">Total Eventos: <span id="totalEvents">0</span></div>
+            <div class="stat-item">Mensagens: <span id="totalMessages">0</span></div>
+            <div class="stat-item">Com Mídia: <span id="totalMedia">0</span></div>
+            <div class="stat-item">Erros: <span id="totalErrors">0</span></div>
+            <div class="stat-item">Tempo Conectado: <span id="uptime">0s</span></div>
+        </div>
+
+        <div class="log-container" id="logContainer">
+            <div class="log-entry">
+                <span class="timestamp">[SISTEMA]</span>
+                <span class="event-name">AGUARDANDO CONEXÃO...</span>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://cdn.socket.io/4.6.1/socket.io.min.js"></script>
+    <script>
+        let socket = null;
+        let stats = {
+            totalEvents: 0,
+            totalMessages: 0,
+            totalMedia: 0,
+            totalErrors: 0,
+            connectedAt: null
+        };
+        let uptimeInterval = null;
+
+        function connectSocket() {
+            if (socket && socket.connected) {
+                addLog('Já conectado!', 'warning');
+                return;
+            }
+
+            addLog('Conectando ao servidor...', 'system');
+            
+            socket = io('http://localhost:3001', {
+                transports: ['websocket', 'polling'],
+                reconnection: true
+            });
+
+            // Eventos de conexão
+            socket.on('connect', () => {
+                document.getElementById('status').className = 'status connected';
+                document.getElementById('status').textContent = 'CONECTADO';
+                stats.connectedAt = Date.now();
+                startUptimeCounter();
+                addLog(`Conectado! Socket ID: ${socket.id}`, 'success');
+            });
+
+            socket.on('disconnect', () => {
+                document.getElementById('status').className = 'status disconnected';
+                document.getElementById('status').textContent = 'DESCONECTADO';
+                stopUptimeCounter();
+                addLog('Desconectado do servidor', 'error');
+            });
+
+            // MONITORAR TODOS OS EVENTOS DE MENSAGEM
+            const eventsToMonitor = [
+                'whatsapp:message_received',
+                'whatsapp:message_sent',
+                'whatsapp:ready',
+                'whatsapp:qr',
+                'whatsapp:authenticated',
+                'whatsapp:disconnected',
+                'whatsapp:loading',
+                'whatsapp:state_change',
+                'whatsapp:error',
+                'system:state'
+            ];
+
+            eventsToMonitor.forEach(eventName => {
+                socket.on(eventName, (data) => {
+                    stats.totalEvents++;
+                    updateStats();
+                    
+                    // Log básico do evento
+                    const logClass = eventName.includes('error') ? 'error' : 
+                                   eventName.includes('message') ? 'message-received' : 
+                                   'system';
+                    
+                    addLog(`EVENTO: ${eventName}`, logClass);
+                    
+                    // Análise especial para mensagens com mídia
+                    if (eventName.includes('message')) {
+                        stats.totalMessages++;
+                        analyzeMessage(data, eventName);
+                    } else {
+                        // Mostrar dados gerais
+                        if (data) {
+                            const preview = JSON.stringify(data, null, 2).substring(0, 500);
+                            addLog(`Dados: ${preview}`, 'data');
+                        }
+                    }
+                });
+            });
+
+            // Listener especial para QUALQUER evento
+            socket.onAny((eventName, ...args) => {
+                if (!eventsToMonitor.includes(eventName)) {
+                    addLog(`EVENTO DESCONHECIDO: ${eventName}`, 'warning');
+                    console.log('Evento não monitorado:', eventName, args);
+                }
+            });
+        }
+
+        function analyzeMessage(data, eventName) {
+            const logContainer = document.getElementById('logContainer');
+            const entry = document.createElement('div');
+            entry.className = 'log-entry media';
+            
+            let html = `
+                <div class="media-info">
+                    <h4>📊 ANÁLISE DA MENSAGEM - ${eventName}</h4>
+            `;
+
+            // Verificar campos básicos
+            html += `<div class="media-field"><span>ID:</span> <strong>${data.id || 'N/A'}</strong></div>`;
+            html += `<div class="media-field"><span>De:</span> <strong>${data.from || 'N/A'}</strong></div>`;
+            html += `<div class="media-field"><span>Para:</span> <strong>${data.to || 'N/A'}</strong></div>`;
+            html += `<div class="media-field"><span>Texto:</span> <strong>${data.body ? data.body.substring(0, 100) : 'Sem texto'}</strong></div>`;
+            html += `<div class="media-field"><span>hasMedia:</span> <strong style="color: ${data.hasMedia ? '#0f0' : '#f00'}">${data.hasMedia || false}</strong></div>`;
+
+            // ANÁLISE CRÍTICA: Verificar objeto media
+            if (data.media) {
+                stats.totalMedia++;
+                html += `<div style="margin-top: 10px; padding-top: 10px; border-top: 1px solid #666;">`;
+                html += `<h4 style="color: #0f0;">✅ OBJETO MEDIA ENCONTRADO!</h4>`;
+                html += `<div class="media-field"><span>Filename:</span> <strong>${data.media.filename || 'N/A'}</strong></div>`;
+                html += `<div class="media-field"><span>MIME Type:</span> <strong>${data.media.mimetype || 'N/A'}</strong></div>`;
+                html += `<div class="media-field"><span>URL:</span> <strong style="color: #00aaff;">${data.media.url || 'N/A'}</strong></div>`;
+                html += `<div class="media-field"><span>Tamanho:</span> <strong>${data.media.size || data.media.sizeFormatted || 'N/A'}</strong></div>`;
+                html += `<div class="media-field"><span>Tipo:</span> <strong>${data.media.type || 'N/A'}</strong></div>`;
+                
+                // Tentar abrir a mídia
+                if (data.media.url) {
+                    const fullUrl = data.media.url.startsWith('http') ? 
+                                  data.media.url : 
+                                  `http://localhost:3001${data.media.url}`;
+                    html += `<div class="media-field">`;
+                    html += `<a href="${fullUrl}" target="_blank" style="color: #0f0; text-decoration: underline;">`;
+                    html += `🔗 CLIQUE AQUI PARA ABRIR O ARQUIVO`;
+                    html += `</a>`;
+                    html += `</div>`;
+                }
+                html += `</div>`;
+            } else if (data.hasMedia) {
+                html += `<div style="margin-top: 10px; padding: 10px; background: #440000; border: 1px solid #f00;">`;
+                html += `<h4 style="color: #f00;">❌ PROBLEMA: hasMedia=true MAS media=undefined!</h4>`;
+                html += `<div style="color: #faa;">Este é o problema! O arquivo foi detectado mas os dados não foram passados.</div>`;
+                html += `</div>`;
+            }
+
+            // Mostrar JSON completo
+            html += `<div style="margin-top: 10px;">`;
+            html += `<details>`;
+            html += `<summary style="cursor: pointer; color: #888;">Ver JSON Completo</summary>`;
+            html += `<pre>${JSON.stringify(data, null, 2)}</pre>`;
+            html += `</details>`;
+            html += `</div>`;
+
+            html += `</div>`;
+            
+            entry.innerHTML = html;
+            logContainer.insertBefore(entry, logContainer.firstChild.nextSibling);
+            
+            updateStats();
+        }
+
+        function disconnectSocket() {
+            if (socket) {
+                socket.disconnect();
+                socket = null;
+            }
+        }
+
+        function clearLog() {
+            const logContainer = document.getElementById('logContainer');
+            logContainer.innerHTML = `
+                <div class="log-entry">
+                    <span class="timestamp">[SISTEMA]</span>
+                    <span class="event-name">LOG LIMPO</span>
+                </div>
+            `;
+            stats = {
+                totalEvents: 0,
+                totalMessages: 0,
+                totalMedia: 0,
+                totalErrors: 0,
+                connectedAt: stats.connectedAt
+            };
+            updateStats();
+        }
+
+        function addLog(message, type = 'info') {
+            const logContainer = document.getElementById('logContainer');
+            const entry = document.createElement('div');
+            entry.className = `log-entry ${type}`;
+            
+            const timestamp = new Date().toLocaleTimeString();
+            entry.innerHTML = `
+                <span class="timestamp">[${timestamp}]</span>
+                <span class="event-name">${message}</span>
+            `;
+            
+            logContainer.insertBefore(entry, logContainer.firstChild.nextSibling);
+            
+            // Limitar a 100 entradas
+            while (logContainer.children.length > 100) {
+                logContainer.removeChild(logContainer.lastChild);
+            }
+        }
+
+        function updateStats() {
+            document.getElementById('totalEvents').textContent = stats.totalEvents;
+            document.getElementById('totalMessages').textContent = stats.totalMessages;
+            document.getElementById('totalMedia').textContent = stats.totalMedia;
+            document.getElementById('totalErrors').textContent = stats.totalErrors;
+        }
+
+        function startUptimeCounter() {
+            uptimeInterval = setInterval(() => {
+                if (stats.connectedAt) {
+                    const seconds = Math.floor((Date.now() - stats.connectedAt) / 1000);
+                    const minutes = Math.floor(seconds / 60);
+                    const hours = Math.floor(minutes / 60);
+                    
+                    let uptimeStr = '';
+                    if (hours > 0) uptimeStr += `${hours}h `;
+                    if (minutes > 0) uptimeStr += `${minutes % 60}m `;
+                    uptimeStr += `${seconds % 60}s`;
+                    
+                    document.getElementById('uptime').textContent = uptimeStr;
+                }
+            }, 1000);
+        }
+
+        function stopUptimeCounter() {
+            if (uptimeInterval) {
+                clearInterval(uptimeInterval);
+                uptimeInterval = null;
+            }
+        }
+
+        // Auto-conectar ao carregar
+        window.onload = () => {
+            setTimeout(connectSocket, 500);
+        };
+
+        // Teste de upload
+        async function testUpload() {
+            if (!socket || !socket.connected) {
+                alert('Conecte o Socket primeiro!');
+                return;
+            }
+            
+            addLog('Criando arquivo de teste...', 'system');
+            
+            // Criar um blob de teste (imagem 1x1 pixel)
+            const base64 = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==';
+            const blob = await fetch(`data:image/png;base64,${base64}`).then(r => r.blob());
+            const file = new File([blob], 'test.png', { type: 'image/png' });
+            
+            const formData = new FormData();
+            formData.append('file', file);
+            formData.append('to', '5511999999999@c.us');
+            formData.append('caption', 'Teste de upload');
+            
+            try {
+                const response = await fetch('http://localhost:3001/api/whatsapp/send-media', {
+                    method: 'POST',
+                    body: formData
+                });
+                
+                const data = await response.json();
+                addLog(`Upload response: ${JSON.stringify(data)}`, data.success ? 'success' : 'error');
+            } catch (error) {
+                addLog(`Erro no upload: ${error.message}`, 'error');
+            }
+        }
+    </script>
+</body>
+</html>

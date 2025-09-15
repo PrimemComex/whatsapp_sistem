@@ -1,0 +1,521 @@
+// server/services/whatsapp.service.js
+const { Client, LocalAuth, MessageMedia } = require('whatsapp-web.js');
+const qrcode = require('qrcode');
+const fs = require('fs');
+const path = require('path');
+
+class WhatsAppService {
+    constructor(io, logger) {
+        this.client = null;
+        this.io = io;
+        this.logger = logger;
+        this.isReady = false;
+        this.qrCode = null;
+        this.sessionName = 'primem-session';
+        this.messageHistory = {};
+        this.contacts = {};
+        this.reconnectAttempts = 0;
+        this.maxReconnectAttempts = 5;
+    }
+
+    async initialize() {
+        try {
+            this.logger.info('🚀 Inicializando WhatsApp Web...');
+
+            // Criar pasta de uploads se não existir
+            const uploadsDir = path.join(__dirname, '../../uploads');
+            if (!fs.existsSync(uploadsDir)) {
+                fs.mkdirSync(uploadsDir, { recursive: true });
+                this.logger.info('📁 Pasta uploads criada');
+            }
+
+            this.client = new Client({
+                authStrategy: new LocalAuth({
+                    clientId: this.sessionName,
+                    dataPath: './sessions'
+                }),
+                puppeteer: {
+                    headless: true,
+                    args: [
+                        '--no-sandbox',
+                        '--disable-setuid-sandbox',
+                        '--disable-dev-shm-usage',
+                        '--disable-accelerated-2d-canvas',
+                        '--no-first-run',
+                        '--no-zygote',
+                        '--single-process',
+                        '--disable-gpu'
+                    ]
+                },
+                webVersionCache: {
+                    type: 'remote',
+                    remotePath: 'https://raw.githubusercontent.com/wppconnect-team/wa-version/main/html/2.2412.54.html',
+                }
+            });
+
+            this.setupEventHandlers();
+            await this.client.initialize();
+            
+        } catch (error) {
+            this.logger.error('❌ Erro ao inicializar WhatsApp:', error);
+            throw error;
+        }
+    }
+
+    setupEventHandlers() {
+        // QR Code
+        this.client.on('qr', async (qr) => {
+            try {
+                this.logger.info('📱 QR Code gerado');
+                
+                // Gerar QR Code como base64
+                const qrCodeBase64 = await qrcode.toDataURL(qr);
+                this.qrCode = qrCodeBase64;
+                
+                // Emitir QR Code para todos os clientes
+                this.io.emit('whatsapp:qr', { 
+                    qrCode: qrCodeBase64 
+                });
+                
+                // Também imprimir no terminal para debug
+                const qrcodeTerminal = require('qrcode-terminal');
+                qrcodeTerminal.generate(qr, { small: true });
+                
+            } catch (error) {
+                this.logger.error('Erro ao gerar QR Code:', error);
+            }
+        });
+
+        // Pronto
+        this.client.on('ready', async () => {
+            this.isReady = true;
+            this.qrCode = null;
+            this.reconnectAttempts = 0;
+            
+            this.logger.success('✅ WhatsApp conectado e pronto!');
+            
+            // Tentar obter informações do cliente
+            let userInfo = {
+                number: 'connected',
+                name: 'WhatsApp User'
+            };
+            
+            try {
+                const info = this.client.info;
+                if (info) {
+                    userInfo.number = info.wid ? info.wid.user : 'connected';
+                    userInfo.name = info.pushname || 'WhatsApp User';
+                    this.logger.info(`📱 Número: ${userInfo.number}`);
+                    this.logger.info(`👤 Nome: ${userInfo.name}`);
+                }
+            } catch (e) {
+                this.logger.info('WhatsApp conectado (sem detalhes do usuário)');
+            }
+            
+            this.io.emit('whatsapp:ready', {
+                info: userInfo,
+                timestamp: new Date()
+            });
+        });
+
+        // Autenticado
+        this.client.on('authenticated', () => {
+            this.logger.success('🔐 Autenticação realizada com sucesso');
+            this.io.emit('whatsapp:authenticated');
+        });
+
+        // Falha na autenticação
+        this.client.on('auth_failure', (msg) => {
+            this.logger.error('❌ Falha na autenticação:', msg);
+            this.io.emit('whatsapp:auth_failure', { message: msg });
+            // Limpar sessão corrompida
+            this.clearSession();
+        });
+
+        // Desconectado
+        this.client.on('disconnected', (reason) => {
+            this.isReady = false;
+            this.logger.warning('📵 WhatsApp desconectado:', reason);
+            this.io.emit('whatsapp:disconnected', { reason });
+            // Tentar reconectar
+            this.handleReconnection();
+        });
+
+        // Mensagem recebida - COM CORREÇÃO PARA MÍDIA
+        this.client.on('message', async (message) => {
+            try {
+                const contact = await message.getContact();
+                const chat = await message.getChat();
+                
+                // Criar objeto base da mensagem
+                const messageData = {
+                    id: message.id._serialized,
+                    from: message.from,
+                    body: message.body || '',
+                    timestamp: message.timestamp * 1000,
+                    fromMe: message.fromMe,
+                    author: message.author,
+                    isGroup: chat.isGroup,
+                    hasMedia: message.hasMedia,
+                    contact: {
+                        name: contact.name || contact.pushname || contact.number,
+                        number: contact.number,
+                        pushname: contact.pushname
+                    },
+                    chat: {
+                        name: chat.name || contact.name || contact.pushname || contact.number,
+                        isGroup: chat.isGroup
+                    }
+                };
+                
+                // CORREÇÃO: Processar mídia se existir
+                if (message.hasMedia) {
+                    this.logger.info('📎 Processando mídia recebida...');
+                    
+                    try {
+                        const media = await message.downloadMedia();
+                        
+                        if (media && media.data) {
+                            // Extrair extensão correta do mimetype
+                            let ext = 'bin'; // extensão padrão
+                            if (media.mimetype) {
+                                const parts = media.mimetype.split('/');
+                                if (parts[1]) {
+                                    ext = parts[1].split(';')[0]; // Remove parâmetros do MIME
+                                }
+                            }
+                            
+                            // Corrigir extensões comuns
+                            if (ext === 'jpeg') ext = 'jpg';
+                            if (ext === 'quicktime') ext = 'mov';
+                            if (ext === 'x-matroska') ext = 'mkv';
+                            
+                            // Nome único para o arquivo
+                            const filename = `${Date.now()}_${message.id.id.substring(0, 10)}.${ext}`;
+                            const filepath = path.join(__dirname, '../../uploads', filename);
+                            
+                            // Garantir que a pasta existe
+                            const uploadsDir = path.join(__dirname, '../../uploads');
+                            if (!fs.existsSync(uploadsDir)) {
+                                fs.mkdirSync(uploadsDir, { recursive: true });
+                            }
+                            
+                            // Converter base64 para buffer e salvar
+                            const buffer = Buffer.from(media.data, 'base64');
+                            fs.writeFileSync(filepath, buffer);
+                            
+                            // IMPORTANTE: Adicionar dados completos da mídia
+                            messageData.media = {
+                                filename: filename,
+                                mimetype: media.mimetype || 'application/octet-stream',
+                                size: buffer.length,
+                                url: `/uploads/${filename}`,
+                                type: media.mimetype ? media.mimetype.split('/')[0] : 'file'
+                            };
+                            
+                            // Se for imagem pequena, adicionar thumbnail
+                            if (media.mimetype && media.mimetype.startsWith('image/') && buffer.length < 500000) {
+                                messageData.media.thumbnail = `data:${media.mimetype};base64,${media.data.substring(0, 100)}...`;
+                            }
+                            
+                            this.logger.success(`✅ Mídia salva: ${filename} (${(buffer.length / 1024).toFixed(2)} KB)`);
+                            this.logger.info(`📦 Tipo: ${media.mimetype}`);
+                            this.logger.info(`🔗 URL: ${messageData.media.url}`);
+                        }
+                    } catch (mediaError) {
+                        this.logger.error('❌ Erro ao processar mídia:', mediaError);
+                        // Mesmo com erro, continuar processando a mensagem
+                        messageData.mediaError = true;
+                    }
+                }
+                
+                // Log do que será enviado
+                this.logger.whatsapp(`📩 Mensagem de ${messageData.contact.name}: ${message.body ? message.body.substring(0, 50) : '[MÍDIA]'}...`);
+                
+                // Salvar no histórico
+                const chatId = message.from;
+                if (!this.messageHistory[chatId]) {
+                    this.messageHistory[chatId] = [];
+                }
+                this.messageHistory[chatId].push(messageData);
+                
+                // IMPORTANTE: Emitir com todos os dados
+                this.io.emit('whatsapp:message_received', messageData);
+                
+                // Log de confirmação
+                if (messageData.media) {
+                    this.logger.info('📤 Mensagem com mídia emitida via Socket.IO');
+                }
+                
+            } catch (error) {
+                this.logger.error('Erro ao processar mensagem:', error);
+            }
+        });
+
+        // Mensagem enviada
+        this.client.on('message_create', async (message) => {
+            if (message.fromMe) {
+                try {
+                    const contact = await message.getContact();
+                    const chat = await message.getChat();
+                    
+                    const messageData = {
+                        id: message.id._serialized,
+                        to: message.to,
+                        body: message.body || '',
+                        timestamp: message.timestamp * 1000,
+                        fromMe: true,
+                        hasMedia: message.hasMedia,
+                        chat: {
+                            name: chat.name || contact.name || message.to,
+                            isGroup: chat.isGroup
+                        }
+                    };
+                    
+                    // Processar mídia enviada se existir
+                    if (message.hasMedia) {
+                        try {
+                            const media = await message.downloadMedia();
+                            if (media && media.data) {
+                                let ext = 'bin';
+                                if (media.mimetype) {
+                                    const parts = media.mimetype.split('/');
+                                    if (parts[1]) {
+                                        ext = parts[1].split(';')[0];
+                                    }
+                                }
+                                
+                                // Corrigir extensões
+                                if (ext === 'jpeg') ext = 'jpg';
+                                if (ext === 'quicktime') ext = 'mov';
+                                
+                                const filename = `sent_${Date.now()}_${message.id.id.substring(0, 10)}.${ext}`;
+                                const filepath = path.join(__dirname, '../../uploads', filename);
+                                
+                                const buffer = Buffer.from(media.data, 'base64');
+                                fs.writeFileSync(filepath, buffer);
+                                
+                                messageData.media = {
+                                    filename: filename,
+                                    mimetype: media.mimetype || 'application/octet-stream',
+                                    size: buffer.length,
+                                    url: `/uploads/${filename}`,
+                                    type: media.mimetype ? media.mimetype.split('/')[0] : 'file'
+                                };
+                                
+                                this.logger.info(`📤 Mídia enviada salva: ${filename}`);
+                            }
+                        } catch (mediaError) {
+                            this.logger.error('Erro ao processar mídia enviada:', mediaError);
+                        }
+                    }
+                    
+                    this.logger.whatsapp('📤 Mensagem enviada');
+                    
+                    // Salvar no histórico
+                    const chatId = message.to;
+                    if (!this.messageHistory[chatId]) {
+                        this.messageHistory[chatId] = [];
+                    }
+                    this.messageHistory[chatId].push(messageData);
+                    
+                    // Emitir para todos os clientes
+                    this.io.emit('whatsapp:message_sent', messageData);
+                    
+                } catch (error) {
+                    this.logger.error('Erro ao processar mensagem enviada:', error);
+                }
+            }
+        });
+
+        // Loading screen
+        this.client.on('loading_screen', (percent, message) => {
+            this.logger.info(`⏳ Carregando: ${percent}% - ${message}`);
+            this.io.emit('whatsapp:loading', { percent, message });
+        });
+
+        // Mudança de estado
+        this.client.on('change_state', (state) => {
+            this.logger.info(`📊 Estado WhatsApp: ${state}`);
+            this.io.emit('whatsapp:state_change', { state });
+        });
+
+        // Erro
+        this.client.on('error', (error) => {
+            this.logger.error('❌ Erro no WhatsApp:', error);
+            this.io.emit('whatsapp:error', { error: error.message });
+        });
+    }
+
+    // Enviar mensagem
+    async sendMessage(number, message, media = null) {
+        if (!this.isReady) {
+            throw new Error('WhatsApp não está conectado');
+        }
+
+        try {
+            // Formatar número (adicionar @c.us se necessário)
+            let chatId = number;
+            if (!chatId.includes('@')) {
+                // Remove caracteres não numéricos
+                chatId = chatId.replace(/\D/g, '');
+                // Adiciona código do Brasil se necessário
+                if (!chatId.startsWith('55')) {
+                    chatId = '55' + chatId;
+                }
+                chatId = chatId + '@c.us';
+            }
+            
+            let sentMessage;
+            
+            if (media) {
+                // Verificar se o arquivo existe
+                if (!fs.existsSync(media)) {
+                    throw new Error(`Arquivo não encontrado: ${media}`);
+                }
+                
+                // Enviar com mídia
+                const mediaMessage = MessageMedia.fromFilePath(media);
+                sentMessage = await this.client.sendMessage(chatId, mediaMessage, { caption: message });
+                this.logger.success(`✅ Arquivo enviado para ${number}`);
+            } else {
+                // Enviar apenas texto
+                sentMessage = await this.client.sendMessage(chatId, message);
+                this.logger.success(`✅ Mensagem enviada para ${number}`);
+            }
+            
+            return {
+                success: true,
+                messageId: sentMessage.id._serialized,
+                to: chatId
+            };
+            
+        } catch (error) {
+            this.logger.error('Erro ao enviar mensagem:', error);
+            throw error;
+        }
+    }
+
+    // Reconexão
+    async handleReconnection() {
+        if (this.reconnectAttempts >= this.maxReconnectAttempts) {
+            this.logger.error('Máximo de tentativas de reconexão atingido');
+            return;
+        }
+
+        this.reconnectAttempts++;
+        this.logger.info(`Tentando reconectar... (${this.reconnectAttempts}/${this.maxReconnectAttempts})`);
+
+        setTimeout(async () => {
+            try {
+                await this.initialize();
+            } catch (error) {
+                this.logger.error('Erro na reconexão:', error);
+                this.handleReconnection();
+            }
+        }, 5000 * this.reconnectAttempts);
+    }
+
+    // Limpar sessão
+    clearSession() {
+        const sessionPath = path.join('./sessions', `session-${this.sessionName}`);
+        if (fs.existsSync(sessionPath)) {
+            fs.rmSync(sessionPath, { recursive: true, force: true });
+            this.logger.info('🗑️ Sessão limpa');
+        }
+    }
+
+    // Desconectar
+    async disconnect() {
+        if (this.client) {
+            try {
+                await this.client.destroy();
+                this.isReady = false;
+                this.logger.info('👋 Cliente WhatsApp desconectado');
+            } catch (error) {
+                this.logger.error('Erro ao desconectar:', error);
+            }
+        }
+    }
+
+    // Status
+    getStatus() {
+        return {
+            connected: this.isReady,
+            ready: this.isReady,
+            hasQR: !!this.qrCode,
+            qrCode: this.qrCode,
+            reconnectAttempts: this.reconnectAttempts
+        };
+    }
+
+    // Obter chats
+    async getChats() {
+        if (!this.isReady) {
+            throw new Error('WhatsApp não está conectado');
+        }
+        
+        try {
+            const chats = await this.client.getChats();
+            return chats.slice(0, 50).map(chat => ({
+                id: chat.id._serialized,
+                name: chat.name || 'Sem nome',
+                isGroup: chat.isGroup,
+                unreadCount: chat.unreadCount,
+                timestamp: chat.timestamp,
+                lastMessage: chat.lastMessage?.body || ''
+            }));
+        } catch (error) {
+            this.logger.error('Erro ao obter chats:', error);
+            throw error;
+        }
+    }
+
+    // Obter mensagens de um chat
+    async getChatMessages(chatId) {
+        if (!this.isReady) {
+            throw new Error('WhatsApp não está conectado');
+        }
+        
+        try {
+            const chat = await this.client.getChatById(chatId);
+            const messages = await chat.fetchMessages({ limit: 50 });
+            
+            return messages.map(msg => ({
+                id: msg.id._serialized,
+                body: msg.body,
+                from: msg.from,
+                to: msg.to,
+                timestamp: msg.timestamp * 1000,
+                fromMe: msg.fromMe,
+                hasMedia: msg.hasMedia
+            }));
+        } catch (error) {
+            this.logger.error('Erro ao obter mensagens:', error);
+            throw error;
+        }
+    }
+
+    // Obter contato
+    async getContact(number) {
+        if (!this.isReady) {
+            throw new Error('WhatsApp não está conectado');
+        }
+        
+        try {
+            const contact = await this.client.getContactById(number);
+            return {
+                id: contact.id._serialized,
+                name: contact.name || contact.pushname,
+                number: contact.number,
+                isMyContact: contact.isMyContact,
+                profilePicUrl: await contact.getProfilePicUrl()
+            };
+        } catch (error) {
+            this.logger.error('Erro ao obter contato:', error);
+            throw error;
+        }
+    }
+}
+
+module.exports = WhatsAppService;

@@ -1,0 +1,181 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Teste de Áudio WhatsApp</title>
+    <style>
+        body { font-family: Arial; padding: 20px; }
+        .test-container { margin: 20px 0; padding: 20px; border: 1px solid #ccc; }
+        button { padding: 10px; margin: 5px; cursor: pointer; }
+        .success { color: green; }
+        .error { color: red; }
+        audio { width: 100%; margin: 10px 0; }
+    </style>
+</head>
+<body>
+    <h1>🎵 Teste de Reprodução de Áudio OGG/Opus</h1>
+    
+    <div class="test-container">
+        <h3>1. Listar Arquivos Disponíveis</h3>
+        <button onclick="listFiles()">Listar Arquivos</button>
+        <div id="filesList"></div>
+    </div>
+    
+    <div class="test-container">
+        <h3>2. Testar Arquivo Específico</h3>
+        <input type="text" id="filename" placeholder="Nome do arquivo (ex: arquivo.ogg)" style="width: 300px;">
+        <button onclick="testFile()">Testar</button>
+        <div id="testResult"></div>
+    </div>
+    
+    <div class="test-container">
+        <h3>3. Teste de Compatibilidade do Navegador</h3>
+        <button onclick="testBrowser()">Testar Navegador</button>
+        <div id="browserResult"></div>
+    </div>
+
+    <script>
+        const BASE_URL = 'http://localhost:3001';
+        
+        // Listar arquivos
+        async function listFiles() {
+            try {
+                const response = await fetch(`${BASE_URL}/api/debug/files`);
+                const data = await response.json();
+                
+                const container = document.getElementById('filesList');
+                
+                if (data.success && data.files.length > 0) {
+                    let html = '<h4>Arquivos encontrados:</h4><ul>';
+                    data.files.forEach(file => {
+                        html += `
+                            <li>
+                                <strong>${file.name}</strong> (${file.sizeFormatted})
+                                <button onclick="playFile('${file.name}')">▶️ Tocar</button>
+                                <button onclick="downloadFile('${file.name}')">⬇️ Baixar</button>
+                            </li>
+                        `;
+                    });
+                    html += '</ul>';
+                    container.innerHTML = html;
+                } else {
+                    container.innerHTML = '<p class="error">Nenhum arquivo encontrado!</p>';
+                }
+            } catch (error) {
+                document.getElementById('filesList').innerHTML = 
+                    `<p class="error">Erro: ${error.message}</p>`;
+            }
+        }
+        
+        // Testar arquivo específico
+        function testFile() {
+            const filename = document.getElementById('filename').value;
+            if (!filename) {
+                alert('Digite o nome do arquivo!');
+                return;
+            }
+            playFile(filename);
+        }
+        
+        // Reproduzir arquivo
+        function playFile(filename) {
+            const url = `${BASE_URL}/uploads/${filename}`;
+            const container = document.getElementById('testResult');
+            
+            container.innerHTML = `
+                <h4>Testando: ${filename}</h4>
+                
+                <div style="margin: 10px 0;">
+                    <strong>URL:</strong> ${url}
+                </div>
+                
+                <div style="margin: 10px 0;">
+                    <strong>Player HTML5:</strong><br>
+                    <audio controls id="audioPlayer">
+                        <source src="${url}" type="audio/ogg; codecs=opus">
+                        <source src="${url}" type="audio/ogg">
+                        <source src="${url}">
+                    </audio>
+                </div>
+                
+                <div style="margin: 10px 0;">
+                    <button onclick="testWithJS('${url}')">🔊 Testar com JavaScript</button>
+                    <button onclick="window.open('${url}', '_blank')">🔗 Abrir em nova aba</button>
+                </div>
+                
+                <div id="jsResult"></div>
+            `;
+            
+            // Adicionar listeners ao player
+            const player = document.getElementById('audioPlayer');
+            player.addEventListener('loadeddata', () => {
+                console.log('✅ Áudio carregado!');
+                document.getElementById('jsResult').innerHTML += 
+                    '<p class="success">✅ Áudio carregado com sucesso!</p>';
+            });
+            
+            player.addEventListener('error', (e) => {
+                console.error('❌ Erro no player:', e);
+                document.getElementById('jsResult').innerHTML += 
+                    '<p class="error">❌ Erro ao carregar áudio no player HTML5</p>';
+            });
+        }
+        
+        // Testar com JavaScript
+        function testWithJS(url) {
+            const audio = new Audio(url);
+            const resultDiv = document.getElementById('jsResult');
+            
+            audio.play()
+                .then(() => {
+                    resultDiv.innerHTML = '<p class="success">✅ Reproduzindo com JavaScript!</p>';
+                })
+                .catch(err => {
+                    resultDiv.innerHTML = `<p class="error">❌ Erro JavaScript: ${err.message}</p>`;
+                    console.error('Erro completo:', err);
+                });
+        }
+        
+        // Download
+        function downloadFile(filename) {
+            const url = `${BASE_URL}/uploads/${filename}`;
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            a.click();
+        }
+        
+        // Testar compatibilidade do navegador
+        function testBrowser() {
+            const container = document.getElementById('browserResult');
+            let html = '<h4>Suporte do Navegador:</h4>';
+            
+            const audio = document.createElement('audio');
+            
+            const formats = [
+                { type: 'audio/ogg; codecs=opus', name: 'OGG Opus (WhatsApp)' },
+                { type: 'audio/ogg', name: 'OGG' },
+                { type: 'audio/mpeg', name: 'MP3' },
+                { type: 'audio/wav', name: 'WAV' },
+                { type: 'audio/webm', name: 'WebM' }
+            ];
+            
+            html += '<ul>';
+            formats.forEach(format => {
+                const supported = audio.canPlayType(format.type);
+                const status = supported ? '✅' : '❌';
+                const color = supported ? 'green' : 'red';
+                html += `<li style="color: ${color}">${status} ${format.name}: ${supported || 'não suportado'}</li>`;
+            });
+            html += '</ul>';
+            
+            container.innerHTML = html;
+        }
+        
+        // Carregar arquivos ao abrir a página
+        window.onload = () => {
+            listFiles();
+            testBrowser();
+        };
+    </script>
+</body>
+</html>

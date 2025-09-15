@@ -1,0 +1,488 @@
+/* client/src/App.css - CORREÇÕES DE LAYOUT */
+/* =====================================
+   🎨 CORREÇÕES CSS PARA LAYOUT EXISTENTE
+   Mantém a estrutura, corrige visual
+   ===================================== */
+
+/* RESET E BASE */
+* {
+  margin: 0;
+  padding: 0;
+  box-sizing: border-box;
+}
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+  background: #f0f2f5;
+  overflow-x: hidden;
+}
+
+/* CONTAINER PRINCIPAL */
+.app {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+/* ====================================
+   DASHBOARD CORRECTIONS
+   ==================================== */
+
+.dashboard-page {
+  display: flex;
+  height: 100vh;
+  background: #f0f2f5;
+  position: relative; /* Fix positioning issues */
+}
+
+.dashboard-loading {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 100vh;
+  background: #f0f2f5;
+}
+
+/* NAVIGATION SIDEBAR */
+.dashboard-sidebar,
+.navigation-sidebar {
+  width: 280px;
+  min-width: 280px;
+  background: #1e293b;
+  color: white;
+  overflow-y: auto;
+  box-shadow: 2px 0 4px rgba(0,0,0,0.1);
+  z-index: 100;
+  position: relative; /* Fix z-index issues */
+}
+
+/* MAIN CONTENT AREA */
+.dashboard-main,
+.main-content {
+  flex: 1;
+  overflow: auto;
+  background: #f0f2f5;
+  position: relative;
+  z-index: 1;
+}
+
+/* HEADER FIXES */
+.dashboard-header,
+.main-header {
+  height: 64px;
+  background: #2B4C8C;
+  color: white;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 20px;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  position: sticky;
+  top: 0;
+  z-index: 1000;
+}
+
+/* ====================================
+   BUTTON FIXES - CRITICAL
+   ==================================== */
+
+/* Prevent button overlap */
+button {
+  position: relative;
+  z-index: 10;
+  cursor: pointer;
+  border: none;
+  outline: none;
+  transition: all 0.2s ease;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+
+button:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+}
+
+button:active {
+  transform: translateY(0);
+}
+
+button:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* Primary buttons */
+.btn-primary,
+button[style*="background: #2B4C8C"],
+button[style*="backgroundColor: '#2B4C8C'"] {
+  background: #2B4C8C !important;
+  color: white !important;
+  padding: 12px 24px;
+  border-radius: 8px;
+  font-weight: 600;
+}
+
+/* Secondary buttons */
+.btn-secondary {
+  background: transparent;
+  color: #2B4C8C;
+  border: 1px solid #2B4C8C;
+  padding: 12px 24px;
+  border-radius: 8px;
+  font-weight: 600;
+}
+
+/* Small buttons */
+.btn-sm {
+  padding: 8px 16px;
+  font-size: 14px;
+}
+
+/* Icon buttons */
+.btn-icon {
+  width: 40px;
+  height: 40px;
+  padding: 0;
+  border-radius: 50%;
+  background: rgba(255,255,255,0.1);
+}
+
+/* ====================================
+   NAVIGATION FIXES
+   ==================================== */
+
+.nav-list {
+  list-style: none;
+  padding: 20px 0;
+}
+
+.nav-item {
+  margin: 0;
+}
+
+.nav-link,
+.nav-button {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 12px 20px;
+  color: #cbd5e1;
+  text-decoration: none;
+  background: transparent;
+  border: none;
+  width: 100%;
+  text-align: left;
+  font-size: 14px;
+  font-weight: 500;
+  transition: all 0.2s;
+  cursor: pointer;
+}
+
+.nav-link:hover,
+.nav-button:hover,
+.nav-link.active,
+.nav-button.active {
+  background: #3b82f6;
+  color: white;
+}
+
+.nav-icon {
+  font-size: 16px;
+  min-width: 20px;
+  text-align: center;
+}
+
+/* ====================================
+   CARD AND CONTENT FIXES
+   ==================================== */
+
+.card,
+.dashboard-card,
+.stats-card {
+  background: white;
+  border-radius: 12px;
+  padding: 24px;
+  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+  position: relative;
+  z-index: 1;
+  margin-bottom: 20px;
+}
+
+.card-header {
+  margin-bottom: 16px;
+}
+
+.card-title {
+  font-size: 18px;
+  font-weight: 600;
+  color: #1f2937;
+  margin-bottom: 4px;
+}
+
+.card-subtitle {
+  font-size: 14px;
+  color: #6b7280;
+}
+
+/* ====================================
+   GRID LAYOUTS
+   ==================================== */
+
+.dashboard-grid,
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(250px, 1fr));
+  gap: 20px;
+  margin-bottom: 30px;
+}
+
+.content-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 20px;
+}
+
+/* ====================================
+   STATUS INDICATORS
+   ==================================== */
+
+.status-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 12px;
+  border-radius: 20px;
+  font-size: 12px;
+  font-weight: 600;
+  text-transform: uppercase;
+}
+
+.status-connected {
+  background: #dcfce7;
+  color: #15803d;
+}
+
+.status-connecting {
+  background: #fef3c7;
+  color: #92400e;
+}
+
+.status-disconnected {
+  background: #fee2e2;
+  color: #dc2626;
+}
+
+.status-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+}
+
+/* ====================================
+   RESPONSIVE DESIGN
+   ==================================== */
+
+@media (max-width: 1024px) {
+  .dashboard-page {
+    flex-direction: column;
+  }
+  
+  .dashboard-sidebar,
+  .navigation-sidebar {
+    width: 100%;
+    height: auto;
+    position: static;
+  }
+  
+  .content-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 768px) {
+  .dashboard-grid,
+  .stats-grid {
+    grid-template-columns: 1fr;
+  }
+  
+  .dashboard-header,
+  .main-header {
+    padding: 0 15px;
+    font-size: 14px;
+  }
+  
+  button {
+    padding: 10px 16px;
+    font-size: 14px;
+  }
+  
+  .card,
+  .dashboard-card {
+    padding: 16px;
+    margin-bottom: 15px;
+  }
+}
+
+@media (max-width: 480px) {
+  .app {
+    padding: 0;
+  }
+  
+  .dashboard-page {
+    height: auto;
+    min-height: 100vh;
+  }
+  
+  button {
+    padding: 8px 12px;
+    font-size: 13px;
+  }
+  
+  .dashboard-grid,
+  .stats-grid {
+    gap: 15px;
+  }
+}
+
+/* ====================================
+   SCROLLBAR STYLING
+   ==================================== */
+
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+::-webkit-scrollbar-track {
+  background: #f1f5f9;
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 3px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+/* ====================================
+   INPUT AND FORM FIXES
+   ==================================== */
+
+input,
+textarea,
+select {
+  border: 1px solid #d1d5db;
+  border-radius: 6px;
+  padding: 10px 12px;
+  font-size: 14px;
+  transition: all 0.2s;
+  background: white;
+}
+
+input:focus,
+textarea:focus,
+select:focus {
+  outline: none;
+  border-color: #2B4C8C;
+  box-shadow: 0 0 0 3px rgba(43, 76, 140, 0.1);
+}
+
+/* ====================================
+   UTILITY CLASSES
+   ==================================== */
+
+.flex {
+  display: flex;
+}
+
+.flex-column {
+  flex-direction: column;
+}
+
+.items-center {
+  align-items: center;
+}
+
+.justify-center {
+  justify-content: center;
+}
+
+.justify-between {
+  justify-content: space-between;
+}
+
+.gap-2 {
+  gap: 8px;
+}
+
+.gap-4 {
+  gap: 16px;
+}
+
+.text-center {
+  text-align: center;
+}
+
+.text-left {
+  text-align: left;
+}
+
+.text-right {
+  text-align: right;
+}
+
+.font-bold {
+  font-weight: 700;
+}
+
+.font-semibold {
+  font-weight: 600;
+}
+
+.text-sm {
+  font-size: 14px;
+}
+
+.text-lg {
+  font-size: 18px;
+}
+
+.text-xl {
+  font-size: 20px;
+}
+
+.mb-4 {
+  margin-bottom: 16px;
+}
+
+.mt-4 {
+  margin-top: 16px;
+}
+
+.p-4 {
+  padding: 16px;
+}
+
+.rounded {
+  border-radius: 6px;
+}
+
+.rounded-lg {
+  border-radius: 12px;
+}
+
+.shadow {
+  box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+}
+
+.shadow-lg {
+  box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+}
